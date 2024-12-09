@@ -1,2 +1,2 @@
 # SelectiveAttention
-the attention block based on information integration theory
+the selective attention block based on information integration theory
