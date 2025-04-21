@@ -1,31 +1,40 @@
-# author: GAO Chenxi
-# date: 2024/11/30 10:18
-# -*- python version：3.8.10 -*-
-# -*- coding: utf-8 -*-
-# modified version of selective attention based on keras multi-head attention layer
-
 
 import collections
-import numpy as np
+import math
 import string
-from layers.component_builder import ComponentBuilder
 
+import numpy as np
 import tensorflow as tf
-from tensorflow.keras.layers import Layer, Dropout, Softmax
-from tensorflow.keras import initializers, regularizers, constraints
+
+from keras import constraints
+from keras import initializers
+from keras import regularizers
+from keras.engine.base_layer import Layer
+from keras.layers import activation
+from keras.layers import core
+from keras.layers import regularization
+from keras.utils import tf_utils
+
+from layers.component_builder import ComponentBuilder, InputDense, OutputDense
+
+# isort: off
+from tensorflow.python.platform import tf_logging as logging
+from tensorflow.python.util.tf_export import keras_export
+
+
 
 class SelectiveAttention(Layer):
 
     def __init__(self,
-                 num_heads,
                  key_dim,
+                 band_size=None,
                  value_dim=None,
-                 dropout=0.0,
+                 dropout=0.2,
                  use_bias=True,
                  output_shape=None,
                  attention_axes=None,
                  kernel_initializer="glorot_uniform",
-                 bias_initializer="zeros",
+                 bias_initializer="he_normal",
                  kernel_regularizer=None,
                  bias_regularizer=None,
                  activity_regularizer=None,
@@ -33,10 +42,10 @@ class SelectiveAttention(Layer):
                  bias_constraint=None,
                  **kwargs,
                  ):
-        super().__init__(**kwargs)
-        self.supports_masking = True
-        self._num_heads = num_heads
+        super(SelectiveAttention, self).__init__()
+
         self._key_dim = key_dim
+        self._band_size = band_size
         self._value_dim = value_dim if value_dim else key_dim
         self._dropout = dropout
         self._use_bias = use_bias
@@ -49,7 +58,7 @@ class SelectiveAttention(Layer):
         self._kernel_constraint = constraints.get(kernel_constraint)
         self._bias_constraint = constraints.get(bias_constraint)
         if attention_axes is not None and not isinstance(
-                attention_axes, collections.abc.Sized
+            attention_axes, collections.abc.Sized
         ):
             self._attention_axes = (attention_axes,)
         else:
@@ -59,8 +68,10 @@ class SelectiveAttention(Layer):
 
 
     def get_config(self):
+        self._clean_up()
+
         config = {
-            "num_heads": self._num_heads,
+            "band_size": self._band_size,
             "key_dim": self._key_dim,
             "value_dim": self._value_dim,
             "dropout": self._dropout,
@@ -87,16 +98,24 @@ class SelectiveAttention(Layer):
         base_config = super().get_config()
         return dict(list(base_config.items()) + list(config.items()))
 
+    @classmethod
     def from_config(cls, config):
-        # If the layer has a different build() function from the Keras default,
-        # we need to trigger the customized build to create weights.
+
         query_shape = config.pop("query_shape")
         key_shape = config.pop("key_shape")
         value_shape = config.pop("value_shape")
         layer = cls(**config)
-        if not None in [query_shape, key_shape, value_shape]:
+        if None in [query_shape, key_shape, value_shape]:
+            logging.warning(
+                "One of dimensions of the input shape is missing. It "
+                "should have been memorized when the layer was serialized. "
+                "%s is created without weights.",
+                str(cls),
+            )
+        else:
             layer._build_from_signature(query_shape, value_shape, key_shape)
         return layer
+    
     def _get_common_kwargs_for_sublayer(self):
         common_kwargs = dict(
             kernel_regularizer=self._kernel_regularizer,
@@ -105,9 +124,7 @@ class SelectiveAttention(Layer):
             kernel_constraint=self._kernel_constraint,
             bias_constraint=self._bias_constraint,
         )
-        # Create new clone of kernel/bias initializer, so that we don't reuse
-        # the initializer instance, which could lead to same init value since
-        # initializer is stateless.
+
         kernel_initializer = self._kernel_initializer.__class__.from_config(
             self._kernel_initializer.get_config()
         )
@@ -118,19 +135,9 @@ class SelectiveAttention(Layer):
         common_kwargs["bias_initializer"] = bias_initializer
         return common_kwargs
 
-    def _build_attention(self, rank):
-
-        if self._attention_axes is None:
-            self._attention_axes = tuple(range(1, rank - 2))
-        else:
-            self._attention_axes = tuple(self._attention_axes)
-
-        self._softmax = Softmax()
-        self._dropout_layer = Dropout(rate=self._dropout)
-
-    def _build_from_signature(self, query, value,key=None, is_cross_attention=False):
-
-        self._built_from_signature = True
+    
+    
+    def _build_dense(self, query, value, key=None):
 
         if hasattr(query, "shape"):
             self._query_shape = tf.TensorShape(query.shape)
@@ -147,78 +154,169 @@ class SelectiveAttention(Layer):
         else:
             self._key_shape = tf.TensorShape(key)
 
-        output_rank = len(self._query_shape)
-
-        with tf.init_scope():
-            self._filter_input = ComponentBuilder(name="filter", transpose_a=False, transpose_b=False, is_filter=True)
-            self._content_input = ComponentBuilder(name="content", transpose_a=True, transpose_b=False)
-            self._input = ComponentBuilder(name="input", transpose_a=True, transpose_b=False)
-            self._build_attention(output_rank)
+        if self._band_size is None:
+            self._band_size = round(self._key_dim / 2)
 
 
-    def _compute_components(self, query, key, value):
+        # Verify shapes are valid
+        if self._query_shape.rank is None or self._value_shape.rank is None:
+            raise ValueError("Input shapes must have known rank")
+        
 
-        filter_input = self._filter_input(query, query)
-        content_input = self._content_input(query, key)
-        x_input = self._input(key, value)
-
-        return filter_input, content_input, x_input
-
-
-    def _compute_attention_scores(self, filter_input, content_input):
-        attention_scores = tf.matmul(filter_input, content_input)
-        #attention_scores = tf.reshape(attention_scores, self._query_shape)
-        attention_scores = self._softmax(attention_scores)
-        return attention_scores
-
-    def _compute_attention_dropout(self, attention_scores):
-        attention_dropout = Dropout(rate=self._dropout)(attention_scores)
-        return attention_dropout
-    def _compute_attention_output(self, attention_dropout, input):
-
-        attention_output = tf.matmul(attention_dropout, input)
-
-        return attention_output
+        self._input_dense = InputDense(name="input_dense",
+                                        query=query,
+                                        key=key,
+                                        value=value,
+                                        key_dim=self._key_dim)
+        
+        self._output_dense = OutputDense(name="output_dense",
+                                         query=query,
+                                         key=key,
+                                         value=value,
+                                         key_dim=self._key_dim)
+        
+        
+    def _build_from_signature(self, query, value, key=None):
 
 
-    def _compute_attention(self,
-                           query,
-                           key,
-                           value,
-                           training=None):
-
-        filter_input, content_input, x_input = self._compute_components(query, key, value)
-        attention_scores = self._compute_attention_scores(filter_input, content_input)
-
-
-        if training is not None:
-            attention_probs = self._compute_attention_dropout(attention_scores)
-            attention_output = self._compute_attention_output(attention_probs, x_input)
+        self._built_from_signature = True
+        if hasattr(query, "shape"):
+            self._query_shape = tf.TensorShape(query.shape)
         else:
-            attention_output = self._compute_attention_output(attention_scores, x_input)
+            self._query_shape = tf.TensorShape(query)
+        if hasattr(value, "shape"):
+            self._value_shape = tf.TensorShape(value.shape)
+        else:
+            self._value_shape = tf.TensorShape(value)
+        if key is None:
+            self._key_shape = self._value_shape
+        elif hasattr(key, "shape"):
+            self._key_shape = tf.TensorShape(key.shape)
+        else:
+            self._key_shape = tf.TensorShape(key)
 
-        return attention_output, attention_scores
+        if self._band_size is None:
+            self._band_size = round(self._key_dim /2)
 
-    def call(self,
-             query,
-             key,
-             value,
-             attention_mask=None,
-             return_attention_scores=False,
-             training=None,
-             use_causal_mask=False,
-             is_cross_attention=False
-             ):
+        # Verify shapes are valid
+        if self._query_shape.rank is None or self._value_shape.rank is None:
+            raise ValueError("Input shapes must have known rank")
+
+
+        # Any setup work performed only once should happen in an `init_scope`
+        # to avoid creating symbolic Tensors that will later pollute any eager
+        # operations.
+        with tf_utils.maybe_init_scope(self):
+
+            self._input_dense = InputDense(name="input_dense",
+                                            query=query,
+                                            key=key,
+                                            value=value,
+                                            key_dim=self._key_dim)
+            
+            self._output_dense = OutputDense(name="output_dense",
+                                            query=query,
+                                            key=key,
+                                            value=value,
+                                            key_dim=self._key_dim)
+            
+            self._component_builder = ComponentBuilder(name="components",
+                                                        band_size=self._band_size, 
+                                                        use_bias=self._use_bias)
+            
+
+            self._build_attention(self._value_shape.rank)
+
+    """
+    the att_scores_rank should be the same as the rank of the output_dense layer output object.
+    """
+    def _build_attention(self, rank):
+        
+        if self._attention_axes is None:
+            self._attention_axes = tuple(range(1, rank - 1))
+        else:
+            self._attention_axes = tuple(self._attention_axes)
+
+        norm_axes = tuple(
+            range(
+                rank - len(self._attention_axes), rank
+            )
+        )
+        self._softmax = tf.keras.layers.Softmax(axis=norm_axes)
+        self._dropout_layer = regularization.Dropout(rate=self._dropout)
+
+
+    def _compute_attention(
+        self, filter_input, context_input, _input, training=None
+    ):
+        
+        filtered_context = tf.matmul(filter_input, context_input)
+        filtered_context = self._dropout_layer(
+            filtered_context, training=training
+        )
+        attended_info = tf.matmul(filtered_context, _input)
+
+
+        return attended_info, filtered_context
+    
+    def call(
+        self,
+        query,
+        value,
+        key=None,
+        return_attention_scores=False,
+        training=None,
+    ):
+        if not self._built_from_signature:
+            self._build_from_signature(query=query, value=value, key=key)
+
         if key is None:
             key = value
-        if not self._built_from_signature:
-            self._build_from_signature(query=query, value=value, key=key, is_cross_attention=is_cross_attention)
+
+        # Convert RaggedTensor to Tensor.
+        query_is_ragged = isinstance(query, tf.RaggedTensor)
+        if query_is_ragged:
+            query_lengths = query.nested_row_lengths()
+            query = query.to_tensor()
+        key_is_ragged = isinstance(key, tf.RaggedTensor)
+        value_is_ragged = isinstance(value, tf.RaggedTensor)
+        if key_is_ragged and value_is_ragged:
+            # Ensure they have the same shape.
+            bounding_shape = tf.math.maximum(
+                key.bounding_shape(), value.bounding_shape()
+            )
+            key = key.to_tensor(shape=bounding_shape)
+            value = value.to_tensor(shape=bounding_shape)
+        elif key_is_ragged:
+            key = key.to_tensor(shape=tf.shape(value))
+        elif value_is_ragged:
+            value = value.to_tensor(shape=tf.shape(key))
+    
 
 
-        attention_output, attention_scores = self._compute_attention(
-            query, key, value, training
+        # Verify shapes are valid
+        if self._query_shape.rank is None or self._value_shape.rank is None:
+            raise ValueError("Input shapes of EinsumDense must have known rank")
+        
+        query = self._input_dense(query)
+        key = self._input_dense(key)
+        value = self._input_dense(value)
+
+        filter_input, context_input, _input = self._component_builder(query, key, value)
+
+        attention_output, saliency_map = self._compute_attention(
+            filter_input, context_input, _input, training
         )
+        
+        attention_output = self._output_dense(attention_output)
+        saliency_map = self._output_dense(attention_output)
+
+        if query_is_ragged:
+            attention_output = tf.RaggedTensor.from_tensor(
+                attention_output, lengths=query_lengths
+            )
+
 
         if return_attention_scores:
-            return attention_output, attention_scores
+            return attention_output, saliency_map
         return attention_output
