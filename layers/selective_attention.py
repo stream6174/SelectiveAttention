@@ -309,7 +309,7 @@ class SelectiveAttention(Layer):
         )
         
         attention_output = self._output_dense(attention_output)
-        saliency_map = self._output_dense(attention_output)
+        saliency_map = self._output_dense(saliency_map)
 
         if query_is_ragged:
             attention_output = tf.RaggedTensor.from_tensor(
