@@ -330,7 +330,7 @@ class ComponentBuilder(Layer):
     def _band_form(self,filter_input, max_backward=None, max_forward=None):
 
         if max_forward is None:
-            max_forward = -self._band_size
+            max_forward = filter_input.shape.as_list()[-1]-self._band_size
         if max_backward is None:
             max_backward = self._band_size
 
