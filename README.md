@@ -1,8 +1,5 @@
 # SelectiveAttention
 
-the <mark><B>selective attention</B></mark> is implemented based on <B>Feature-Integration Theory</B> proposed by Treisman in 1980.
+Self-attention as the corner component of Transformer is described in the paper - <I>Attention is all you need</I>.  Many biological concepts had been brought into AI field to build artificial neural network. The built AI models also contribute a lot in image and signal analysis in biological researches. 
 
-As a replacement of <mark><B>multi-head attention</B></mark> described in the paper - <I>Attention is all you need</I>, the selective attention considered the early V.S. late selection debate in cognitive neuroscience, and rebuild the attention following the selection procesure hypothesis. The code devloped following the basic usage of Keras multi-head attention layers, it is ~10x faster and same accuracy in experiment using MNIST Fashion dataset, and tested to save more than 90% memory on ImageNet-1k classifcication task to reach the same accuracy.
-
-Looking forward for your testing results on other experiments.
-
+Our work proposed in this work introduce the selective attention described in Feature-Integration Theory proposed by Treisman in 1980. Among the early V.S. late selection debates of selective attention theories, Feature-integration Theory clearly describe the process of information flow filtered and integrated to formulate the selectivity. We also use Hines Matrix to simulate the on- and off- settings at neuron-level of selective attention. As an abstractive method, the hines matrix may not conclude all the possible on- and off- setting distribution at neuron-level. We tested our methods on MNIST dataset, CIFAR-100, and ImageNet-1k dataset, the result shows a significant GPU memory saving up to 90%. It also shows slightly improvement in accuracy on classification of MNIST dataset.
