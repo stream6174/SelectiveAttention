@@ -12,4 +12,4 @@ We also use Hines Matrix to simulate the on- and off- settings at neuron-level o
 
 <img src="./images/hines.png" alt="The Hines Matrix Simulation" width=80% style="float:center">
 
-We tested our methods on MNIST dataset, CIFAR-100, and ImageNet-1k dataset, the result shows a significant GPU memory saving up to 90%. It also shows slightly improvement in accuracy on classification of MNIST dataset.
+We tested our methods on MNIST dataset, CIFAR-100, and ImageNet-1k dataset, the result shows a significant GPU memory saving up to 90%. It also shows slightly improvement in accuracy on classification of MNIST and Imagenette dataset.
