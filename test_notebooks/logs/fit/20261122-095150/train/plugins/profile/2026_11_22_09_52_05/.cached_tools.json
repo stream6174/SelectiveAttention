@@ -1,0 +1,17 @@
+{
+  "files": {
+    "Solstice.xplane.pb": "1795312325-7727483"
+  },
+  "tools": [
+    "overview_page",
+    "trace_viewer@",
+    "op_profile",
+    "input_pipeline_analyzer",
+    "kernel_stats",
+    "memory_profile",
+    "roofline_model",
+    "framework_op_stats",
+    "hlo_stats"
+  ],
+  "version": 1
+}
