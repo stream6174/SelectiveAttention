@@ -4,7 +4,7 @@ Self-attention as the corner component of Transformer is described in the paper 
 
 <img src="./images/visual pathway.png" alt="The Biological Visual Pathway" width=80% style="float:center">
 
-Our work proposed in this work introduce the selective attention described in Feature-Integration Theory proposed by Treisman in 1980. Among the early V.S. late selection debates of selective attention theories, Feature-integration Theory clearly describe the process of information flow filtered and integrated to formulate the selectivity. The attended information flow is described as following:
+Our method proposed in this work introduce the selective attention described in Feature-Integration Theory proposed by Treisman in 1980. Among the early V.S. late selection debates of selective attention theories, Feature-integration Theory clearly describe the process of information flow filtered and integrated to formulate the selectivity. The attended information flow is described as following:
 
 <img src="./images/sa-latest.png" alt="The Attended Information Flow" width=80% style="float:center">
 
@@ -12,4 +12,6 @@ We also use Hines Matrix to simulate the on- and off- settings at neuron-level o
 
 <img src="./images/hines.png" alt="The Hines Matrix Simulation" width=80% style="float:center">
 
-We tested our methods on MNIST dataset, CIFAR-100, and ImageNet-1k dataset, the result shows a significant GPU memory saving up to 90%. It also shows slightly improvement in accuracy on classification of MNIST and Imagenette dataset.From the mathematical induction perspective, our method integrate the linear attention realized by rearrangement of the self-attention with controversially sparsity to reach the balance of expressive power and computational cost.
+Our method proves the efficacy of attention depends not only scarcity of visual features, but also the density increased by the categorical information stored in the previous sessions to reinforce the visual information classification. 
+
+We tested our methods on MNIST dataset, CIFAR-100, and ImageNet-1k dataset, the result shows a significant GPU memory saving up to 90%. It also shows slightly improvement(2%~3%) in accuracy on classification of MNIST and imagenette dataset.From the mathematical induction perspective, our method integrate the linear attention realized by rearrangement of the self-attention with controversially sparsity to reach the balance of expressive power and computational cost.
